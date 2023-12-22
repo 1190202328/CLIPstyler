@@ -1,6 +1,8 @@
 import argparse
+import random
 
 import clip
+import numpy as np
 import torch
 import torch.nn
 import torch.nn.functional as F
@@ -12,6 +14,22 @@ from torchvision.transforms.functional import adjust_contrast
 import StyleNet
 import utils
 from template import imagenet_templates
+
+
+def set_random_seed(seed, deterministic=True):
+    """Set random seed."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+# set pined seed
+set_random_seed(1)
 
 parser = argparse.ArgumentParser()
 
@@ -129,12 +147,6 @@ content_features = utils.get_features(img_normalize(content_image), VGG)
 style_net = StyleNet.UNet()
 style_net.to(device)
 
-style_weights = {'conv1_1': 0.1,
-                 'conv2_1': 0.2,
-                 'conv3_1': 0.4,
-                 'conv4_1': 0.8,
-                 'conv5_1': 1.6}
-
 content_weight = args.lambda_c
 
 show_every = 100
@@ -145,11 +157,6 @@ steps = args.max_step
 content_loss_epoch = []
 style_loss_epoch = []
 total_loss_epoch = []
-
-output_image = content_image
-
-m_cont = torch.mean(content_image, dim=(2, 3), keepdim=False).squeeze(0)
-m_cont = [m_cont[0].item(), m_cont[1].item(), m_cont[2].item()]
 
 cropper = transforms.Compose([
     transforms.RandomCrop(args.crop_size)
@@ -179,6 +186,18 @@ with torch.no_grad():
     text_source /= text_source.norm(dim=-1, keepdim=True)
     source_features = clip_model.encode_image(clip_normalize(content_image, device))
     source_features /= (source_features.clone().norm(dim=-1, keepdim=True))
+
+# save content image
+out_path = './outputs/' + content + '_' + exp + '_origin.jpg'
+output_image = content_image.clone()
+output_image = torch.clamp(output_image, 0, 1)
+output_image = adjust_contrast(output_image, 1.5)
+vutils.save_image(
+    output_image,
+    out_path,
+    nrow=1,
+    normalize=True)
+print(f'origin saved at [{out_path}]')
 
 num_crops = args.num_crops
 for epoch in range(0, steps + 1):
@@ -258,3 +277,4 @@ for epoch in range(0, steps + 1):
             out_path,
             nrow=1,
             normalize=True)
+        print(f'saved at [{out_path}]')
